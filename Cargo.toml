@@ -1,0 +1,16 @@
+[package]
+name = "link-local-address"
+version = "0.1.0"
+license = "MIT"
+edition = "2021"
+
+[dependencies]
+afpacket = {version = "0.2.3", features = ["async-tokio"]}
+futures = "0.3.31"
+ipnet = "2.11.0"
+ipnetwork = "0.21.1"
+log = "0.4.25"
+pnet = "0.35.0"
+timedmap = "1.0.2"
+tokio = {version = "1.43.0", features = ["io-util", "time", "rt", "macros", "sync"]}
+tokio-util = "0.7.13"
