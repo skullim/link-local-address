@@ -10,15 +10,28 @@ use pnet::{
     util::MacAddr,
 };
 use std::{collections::HashMap, net::Ipv4Addr, sync::Arc, time::Duration};
+use thiserror::Error as ThisError;
 use timedmap::TimedMap;
 use tokio::task::JoinHandle;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::{Mutex, Notify},
 };
+
 use tokio_util::sync::CancellationToken;
 
-use crate::{error::Result, host_detection::ProbeOutcome};
+use crate::host_detection::ProbeOutcome;
+
+pub type OpaqueError = Box<dyn std::error::Error + Send + Sync + 'static>;
+
+#[derive(ThisError, Debug)]
+pub enum Error {
+    #[error("Response timeout")]
+    ResponseTimeout,
+    #[error("{0}")]
+    Opaque(#[from] OpaqueError),
+}
+pub type Result<T> = std::result::Result<T, Error>;
 
 struct ArpConstants;
 impl ArpConstants {
@@ -33,6 +46,44 @@ pub struct ArpRequestInput {
     sender_mac: MacAddr,
     target_ip: Ipv4Addr,
     target_mac: MacAddr,
+}
+
+pub struct ArpRequestInputBuilder {
+    sender_ip: Option<Ipv4Addr>,
+    sender_mac: Option<MacAddr>,
+    target_ip: Option<Ipv4Addr>,
+    target_mac: Option<MacAddr>,
+}
+
+impl ArpRequestInputBuilder {
+    pub fn with_sender_mac(mut self, sender_mac: MacAddr) -> Self {
+        self.sender_mac = Some(sender_mac);
+        self
+    }
+
+    pub fn with_sender_ip(mut self, sender_ip: Ipv4Addr) -> Self {
+        self.sender_ip = Some(sender_ip);
+        self
+    }
+
+    pub fn with_target_mac(mut self, target_mac: MacAddr) -> Self {
+        self.target_mac = Some(target_mac);
+        self
+    }
+
+    pub fn with_target_ip(mut self, target_ip: Ipv4Addr) -> Self {
+        self.target_ip = Some(target_ip);
+        self
+    }
+
+    pub fn build(&self) -> ArpRequestInput {
+        ArpRequestInput {
+            target_mac: self.target_mac.unwrap(),
+            target_ip: self.target_ip.unwrap(),
+            sender_mac: self.sender_mac.unwrap(),
+            sender_ip: self.sender_ip.unwrap(),
+        }
+    }
 }
 
 pub struct ArpProbeInput {
@@ -83,7 +134,7 @@ pub struct Client {
     stream: Mutex<RawPacketStream>,
     cache: Arc<ArpCache>,
     notification_handler: Arc<NotificationHandler>,
-    task_spawner: BackgroundTaskSpawner,
+    _task_spawner: BackgroundTaskSpawner,
 }
 
 impl Client {
@@ -92,8 +143,12 @@ impl Client {
         response_timeout: Duration,
         cache_timeout: Duration,
     ) -> Result<Self> {
-        let mut stream = RawPacketStream::new()?;
-        stream.bind(interface_name)?;
+        let mut stream = RawPacketStream::new().map_err(|err| {
+            Error::Opaque(format!("failed to create packet stream, reason: {}", err).into())
+        })?;
+        stream.bind(interface_name).map_err(|err| {
+            Error::Opaque(format!("failed to bind interface to stream, reason {}", err).into())
+        })?;
 
         let notification_handler = Arc::new(NotificationHandler::new());
         let cache = Arc::new(ArpCache::new(
@@ -109,7 +164,7 @@ impl Client {
             stream: Mutex::new(stream),
             cache,
             notification_handler,
-            task_spawner,
+            _task_spawner: task_spawner,
         })
     }
 
@@ -123,8 +178,8 @@ impl Client {
 
         match self.request(&input).await {
             Ok(_) => Ok(ProbeOutcome::Occupied),
-            //@todo distinguish between timeout and other error type
-            Err(_) => Ok(ProbeOutcome::Free),
+            Err(Error::ResponseTimeout) => Ok(ProbeOutcome::Free),
+            Err(err) => Err(err),
         }
     }
 
@@ -138,13 +193,21 @@ impl Client {
             .notification_handler
             .register_notifier(input.target_ip)
             .await;
-        self.stream.lock().await.write_all(&eth_buf).await?;
+        self.stream
+            .lock()
+            .await
+            .write_all(&eth_buf)
+            .await
+            .map_err(|err| {
+                Error::Opaque(format!("failed to send request, reason: {}", err).into())
+            })?;
 
         let response = tokio::time::timeout(
             self.response_timeout,
             self.await_response(notifier, &input.target_ip),
         )
-        .await?;
+        .await
+        .map_err(|_| Error::ResponseTimeout)?;
         Ok(response)
     }
 
@@ -278,8 +341,12 @@ struct ResponseListener {
 
 impl ResponseListener {
     fn new(interface_name: &str, cache: Arc<ArpCache>) -> Result<Self> {
-        let mut stream = RawPacketStream::new()?;
-        stream.bind(interface_name)?;
+        let mut stream = RawPacketStream::new().map_err(|err| {
+            Error::Opaque(format!("failed to create packet stream, reason: {}", err).into())
+        })?;
+        stream.bind(interface_name).map_err(|err| {
+            Error::Opaque(format!("failed to bind interface to stream, reason {}", err).into())
+        })?;
 
         Ok(Self { stream, cache })
     }
@@ -293,18 +360,21 @@ impl ResponseListener {
                 }
             }
         }
-        Err("error while reading the interface traffic".into())
+        Err(Error::Opaque(
+            "error while reading the interface traffic".into(),
+        ))
     }
 }
 
 fn parse_arp_packet(bytes: &[u8]) -> Result<Arp> {
-    let ethernet_packet = EthernetPacket::new(bytes).ok_or("failed to parse Ethernet frame")?;
+    let ethernet_packet =
+        EthernetPacket::new(bytes).ok_or(Error::Opaque("failed to parse Ethernet frame".into()))?;
     if ethernet_packet.get_ethertype() == EtherTypes::Arp {
         Ok(ArpPacket::new(ethernet_packet.payload())
-            .ok_or("Failed to parse ARP packet")?
+            .ok_or(Error::Opaque("failed to parse ARP packet".into()))?
             .from_packet())
     } else {
-        Err("not an ARP packet".into())
+        Err(Error::Opaque("not an ARP packet".into()))
     }
 }
 
