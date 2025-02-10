@@ -41,6 +41,20 @@ impl ArpConstants {
     const IP_V4_LEN: u8 = 4;
 }
 
+#[allow(clippy::enum_variant_names)]
+#[derive(ThisError, Debug)]
+#[non_exhaustive]
+pub enum InputBuildError {
+    #[error("sender MAC address is required")]
+    MissingSenderMac,
+    #[error("sender IP address is required")]
+    MissingSenderIp,
+    #[error("target MAC address is required")]
+    MissingTargetMac,
+    #[error("target IP address is required")]
+    MissingTargetIp,
+}
+
 pub struct ArpRequestInput {
     sender_ip: Ipv4Addr,
     sender_mac: MacAddr,
@@ -56,6 +70,15 @@ pub struct ArpRequestInputBuilder {
 }
 
 impl ArpRequestInputBuilder {
+    pub fn new() -> Self {
+        Self {
+            sender_ip: None,
+            sender_mac: None,
+            target_ip: None,
+            target_mac: None,
+        }
+    }
+
     pub fn with_sender_mac(mut self, sender_mac: MacAddr) -> Self {
         self.sender_mac = Some(sender_mac);
         self
@@ -76,13 +99,13 @@ impl ArpRequestInputBuilder {
         self
     }
 
-    pub fn build(&self) -> ArpRequestInput {
-        ArpRequestInput {
-            target_mac: self.target_mac.unwrap(),
-            target_ip: self.target_ip.unwrap(),
-            sender_mac: self.sender_mac.unwrap(),
-            sender_ip: self.sender_ip.unwrap(),
-        }
+    pub fn build(&self) -> std::result::Result<ArpRequestInput, InputBuildError> {
+        Ok(ArpRequestInput {
+            target_mac: self.target_mac.ok_or(InputBuildError::MissingTargetMac)?,
+            target_ip: self.target_ip.ok_or(InputBuildError::MissingTargetIp)?,
+            sender_mac: self.sender_mac.ok_or(InputBuildError::MissingSenderMac)?,
+            sender_ip: self.sender_ip.ok_or(InputBuildError::MissingSenderIp)?,
+        })
     }
 }
 
@@ -114,22 +137,15 @@ impl ArpProbeInputBuilder {
         self
     }
 
-    pub fn build(&self) -> ArpProbeInput {
-        ArpProbeInput {
-            target_ip: self.target_ip.unwrap(),
-            sender_mac: self.sender_mac.unwrap(),
-        }
+    pub fn build(&self) -> std::result::Result<ArpProbeInput, InputBuildError> {
+        Ok(ArpProbeInput {
+            target_ip: self.target_ip.ok_or(InputBuildError::MissingTargetIp)?,
+            sender_mac: self.sender_mac.ok_or(InputBuildError::MissingSenderMac)?,
+        })
     }
 }
 
-//@todo: afpacket license is probably too restrictive -> Should be fine, MirOs is permissive, but the crate itself is using
-// unmaintained crate: instant
-//@todo: Error handling, create an enum struct
-//@todo: Check if the underlying socket/interaction with FDs is actually thread-safe
-//(optional) @todo: detect ip conflict in ArpCache
-
 pub struct Client {
-    //time window for host to response
     response_timeout: Duration,
     stream: Mutex<RawPacketStream>,
     cache: Arc<ArpCache>,
@@ -526,7 +542,7 @@ mod tests {
                         let builder = ArpProbeInputBuilder::new()
                             .with_sender_mac(source_mac)
                             .with_target_ip(Ipv4Addr::new(10, 1, 1, ip_d as u8));
-                        client_clone.probe(&builder.build()).await.unwrap()
+                        client_clone.probe(&builder.build().unwrap()).await.unwrap()
                     }
                 })
                 .collect();
@@ -543,7 +559,7 @@ mod tests {
                         let builder = ArpProbeInputBuilder::new()
                             .with_sender_mac(source_mac)
                             .with_target_ip(Ipv4Addr::new(10, 1, 1, ip_d as u8));
-                        client_clone.probe(&builder.build()).await.unwrap()
+                        client_clone.probe(&builder.build().unwrap()).await.unwrap()
                     }
                 })
                 .collect();
