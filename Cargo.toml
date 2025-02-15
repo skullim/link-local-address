@@ -6,7 +6,7 @@ edition = "2021"
 
 [dependencies]
 afpacket = {version = "0.2.3", features = ["async-tokio"]}
-async-arp = "0.3.0"
+async-arp = "0.3.1"
 async-trait = "0.1.86"
 derive_more = {version = "2.0.1", features = ["full"]}
 futures = "0.3.31"

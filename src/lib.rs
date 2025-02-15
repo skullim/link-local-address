@@ -4,7 +4,9 @@ pub mod probe;
 use crate::error::Result;
 use ipnet::{Ipv4Net, Ipv6Net};
 use probe::{HostProber, ProbeHost};
+use std::fmt::Debug;
 use std::net::Ipv6Addr;
+use std::num::NonZeroUsize;
 use std::slice::Iter;
 use std::{
     net::{IpAddr, Ipv4Addr},
@@ -65,6 +67,7 @@ impl<T> SelectIpStrategy<T> for IterativeStrategy<T> {
 pub struct FreeIpFinder<Ip> {
     strategy: IpSelectionStrategy<Ip>,
     host_prober: HostProber<Ip>,
+    batch_size: NonZeroUsize,
 }
 
 impl<Ip: Copy> FreeIpFinder<Ip> {
@@ -72,37 +75,45 @@ impl<Ip: Copy> FreeIpFinder<Ip> {
         FreeIpFinderBuilder::default()
     }
 
-    pub async fn find_next(&mut self) -> Result<Ip> {
-        for ip in self.strategy.iter() {
-            let outcome = self.host_prober.probe(*ip).await?;
-            if outcome.is_free() {
-                return Ok(*ip);
-            }
-        }
-        Err("No free ip found".into())
+    pub async fn find_next(&mut self) -> Result<Vec<Ip>> {
+        let probe_ips: Vec<_> = self
+            .strategy
+            .iter()
+            .take(self.batch_size.into())
+            .copied()
+            .collect();
+        let outcomes = self.host_prober.probe(&probe_ips).await;
+
+        Ok(outcomes
+            .into_iter()
+            .filter_map(|outcome| outcome.ok())
+            .filter(|ok_outcome| ok_outcome.is_free())
+            .map(|free_outcome| *free_outcome.target_ip())
+            .collect())
     }
 
     //@todo makes more sense to return in some batches, otherwise polling 65k futures in Ipv4 case is not the smartest idea,
     // not to mention Ipv6 range
-    async fn find_all(&self) -> Result<Vec<Ip>> {
-        let future_probes = self
-            .strategy
-            .iter()
-            .map(|ip| async move { self.host_prober.probe(*ip).await.unwrap() });
-        let outcomes = futures::future::join_all(future_probes).await;
+    // async fn find_all(&self) -> Result<Vec<Ip>> {
+    //     let future_probes = self
+    //         .strategy
+    //         .iter()
+    //         .map(|ip| async move { self.host_prober.probe(*ip).await.unwrap() });
+    //     let outcomes = futures::future::join_all(future_probes).await;
 
-        Ok(outcomes
-            .into_iter()
-            .zip(self.strategy.iter())
-            .filter(|(outcome, _)| outcome.is_free())
-            .map(|(_, ip)| *ip)
-            .collect())
-    }
+    //     Ok(outcomes
+    //         .into_iter()
+    //         .zip(self.strategy.iter())
+    //         .filter(|(outcome, _)| outcome.is_free())
+    //         .map(|(_, ip)| *ip)
+    //         .collect())
+    // }
 }
 
 pub struct FreeIpFinderBuilder<Ip> {
     strategy: Option<IpSelectionStrategy<Ip>>,
     host_prober: Option<HostProber<Ip>>,
+    batch_size: NonZeroUsize,
 }
 
 impl<Ip> Default for FreeIpFinderBuilder<Ip> {
@@ -110,6 +121,7 @@ impl<Ip> Default for FreeIpFinderBuilder<Ip> {
         Self {
             strategy: None,
             host_prober: None,
+            batch_size: unsafe { NonZeroUsize::new_unchecked(1) },
         }
     }
 }
@@ -131,10 +143,21 @@ impl<Ip> FreeIpFinderBuilder<Ip> {
         self
     }
 
+    pub fn with_batch_size<T>(mut self, batch_size: T) -> Self
+    where
+        T: TryInto<NonZeroUsize>,
+        T::Error: Debug,
+    {
+        self.batch_size = batch_size.try_into().unwrap();
+        self
+    }
+
+    //@todo: improve API by state pattern to always have those fields set
     pub fn build(self) -> FreeIpFinder<Ip> {
         FreeIpFinder {
             strategy: self.strategy.unwrap(),
             host_prober: self.host_prober.unwrap(),
+            batch_size: self.batch_size,
         }
     }
 }
