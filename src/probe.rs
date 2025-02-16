@@ -7,9 +7,6 @@ use async_arp::{
 use async_trait::async_trait;
 use pnet::util::MacAddr;
 
-pub struct NdpClient;
-pub struct ProbeIpv6Outcome;
-
 pub struct Outcome<Ip> {
     ip: Ip,
     status: ProbeStatus,

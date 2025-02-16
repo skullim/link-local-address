@@ -1,10 +1,11 @@
 pub mod error;
+pub mod net_config;
 pub mod probe;
 
 use crate::error::Result;
 use ipnet::{Ipv4Net, Ipv6Net};
+use itertools::{Chunks, IntoChunks, Itertools};
 use probe::{HostProber, ProbeHost};
-use std::fmt::Debug;
 use std::net::Ipv6Addr;
 use std::num::NonZeroUsize;
 use std::slice::Iter;
@@ -37,20 +38,42 @@ impl LocalLinkNetProvider {
     }
 }
 
-//iterate and check the range one by one, random, some other smarter methods
-pub trait SelectIpStrategy<T> {
-    fn iter(&self) -> Iter<T>;
-}
-pub type IpSelectionStrategy<Ip> = Box<dyn SelectIpStrategy<Ip>>;
-
-pub struct IterativeStrategy<T> {
-    ip_range: Vec<T>,
+pub struct ChunksHandler<'a, Ip> {
+    selector: IpChunksSelector<Ip>,
+    chunks: Option<IntoChunks<Iter<'a, Ip>>>,
+    chunk_size: NonZeroUsize,
 }
 
-impl<T> IterativeStrategy<T> {
+impl<'a, Ip> ChunksHandler<'a, Ip> {
+    pub fn new(selector: IpChunksSelector<Ip>, chunk_size: NonZeroUsize) -> Self {
+        Self {
+            selector,
+            chunks: None,
+            chunk_size,
+        }
+    }
+
+    pub fn chunks(&'a mut self) -> Option<Chunks<'a, Iter<'a, Ip>>> {
+        if self.chunks.is_none() {
+            self.chunks = Some(self.selector.chunks(self.chunk_size));
+        }
+        self.chunks.as_ref().map(|chunks| chunks.into_iter())
+    }
+}
+
+pub trait SelectIpChunks<Ip> {
+    fn chunks(&self, size: NonZeroUsize) -> IntoChunks<Iter<'_, Ip>>;
+}
+pub type IpChunksSelector<Ip> = Box<dyn SelectIpChunks<Ip>>;
+
+pub struct SequentialChunkSelector<Ip> {
+    ip_range: Vec<Ip>,
+}
+
+impl<Ip> SequentialChunkSelector<Ip> {
     pub fn new<I>(iter: I) -> Self
     where
-        I: IntoIterator<Item = T>,
+        I: IntoIterator<Item = Ip>,
     {
         Self {
             ip_range: iter.into_iter().collect(),
@@ -58,80 +81,66 @@ impl<T> IterativeStrategy<T> {
     }
 }
 
-impl<T> SelectIpStrategy<T> for IterativeStrategy<T> {
-    fn iter(&self) -> Iter<T> {
-        self.ip_range.iter()
+impl<Ip> SelectIpChunks<Ip> for SequentialChunkSelector<Ip> {
+    fn chunks(&self, size: NonZeroUsize) -> IntoChunks<Iter<'_, Ip>> {
+        self.ip_range.iter().chunks(size.into())
     }
 }
 
-pub struct FreeIpFinder<Ip> {
-    strategy: IpSelectionStrategy<Ip>,
+pub struct FreeIpFinder<'a, Ip> {
+    ip_chunks: Chunks<'a, Iter<'a, Ip>>,
     host_prober: HostProber<Ip>,
-    batch_size: NonZeroUsize,
 }
 
-impl<Ip: Copy> FreeIpFinder<Ip> {
-    pub fn builder() -> FreeIpFinderBuilder<Ip> {
-        FreeIpFinderBuilder::default()
-    }
-
-    pub async fn find_next(&mut self) -> Result<Vec<Ip>> {
-        let probe_ips: Vec<_> = self
-            .strategy
-            .iter()
-            .take(self.batch_size.into())
-            .copied()
-            .collect();
-        let outcomes = self.host_prober.probe(&probe_ips).await;
-
-        Ok(outcomes
-            .into_iter()
-            .filter_map(|outcome| outcome.ok())
-            .filter(|ok_outcome| ok_outcome.is_free())
-            .map(|free_outcome| *free_outcome.target_ip())
-            .collect())
-    }
-
-    //@todo makes more sense to return in some batches, otherwise polling 65k futures in Ipv4 case is not the smartest idea,
-    // not to mention Ipv6 range
-    // async fn find_all(&self) -> Result<Vec<Ip>> {
-    //     let future_probes = self
-    //         .strategy
-    //         .iter()
-    //         .map(|ip| async move { self.host_prober.probe(*ip).await.unwrap() });
-    //     let outcomes = futures::future::join_all(future_probes).await;
-
-    //     Ok(outcomes
-    //         .into_iter()
-    //         .zip(self.strategy.iter())
-    //         .filter(|(outcome, _)| outcome.is_free())
-    //         .map(|(_, ip)| *ip)
-    //         .collect())
-    // }
-}
-
-pub struct FreeIpFinderBuilder<Ip> {
-    strategy: Option<IpSelectionStrategy<Ip>>,
-    host_prober: Option<HostProber<Ip>>,
-    batch_size: NonZeroUsize,
-}
-
-impl<Ip> Default for FreeIpFinderBuilder<Ip> {
-    fn default() -> Self {
+impl<'a, Ip> FreeIpFinder<'a, Ip> {
+    fn new(ip_chunks: Chunks<'a, Iter<'a, Ip>>, host_prober: HostProber<Ip>) -> Self {
         Self {
-            strategy: None,
-            host_prober: None,
-            batch_size: unsafe { NonZeroUsize::new_unchecked(1) },
+            ip_chunks,
+            host_prober,
         }
     }
 }
 
-impl<Ip> FreeIpFinderBuilder<Ip> {
-    pub fn with_strategy<S>(mut self, strategy: S) -> Self
-    where
-        S: SelectIpStrategy<Ip> + 'static,
-    {
-        self.strategy = Some(Box::new(strategy));
+impl<'a, Ip: Copy> FreeIpFinder<'a, Ip> {
+    pub fn builder() -> FreeIpFinderBuilder<'a, Ip> {
+        FreeIpFinderBuilder::default()
+    }
+
+    pub async fn find_next(&mut self) -> Option<Vec<Ip>> {
+        if let Some(chunk) = self.ip_chunks.next() {
+            let ips: Vec<_> = chunk.copied().collect();
+            let outcomes = self.host_prober.probe(&ips).await;
+            Some(
+                outcomes
+                    .into_iter()
+                    .filter_map(|outcome| outcome.ok())
+                    .filter(|ok_outcome| ok_outcome.is_free())
+                    .map(|free_outcome| *free_outcome.target_ip())
+                    .collect(),
+            )
+        } else {
+            None
+        }
+    }
+}
+
+pub struct FreeIpFinderBuilder<'a, Ip> {
+    ip_chunks: Option<Chunks<'a, Iter<'a, Ip>>>,
+    host_prober: Option<HostProber<Ip>>,
+}
+
+impl<'a, Ip> Default for FreeIpFinderBuilder<'_, Ip> {
+    fn default() -> Self {
+        Self {
+            ip_chunks: None,
+            host_prober: None,
+        }
+    }
+}
+
+impl<'a, Ip> FreeIpFinderBuilder<'a, Ip> {
+    pub fn with_ip_chunks(mut self, chunks: Chunks<'a, Iter<'a, Ip>>) -> Self {
+        self.ip_chunks = Some(chunks);
         self
     }
 
@@ -143,39 +152,9 @@ impl<Ip> FreeIpFinderBuilder<Ip> {
         self
     }
 
-    pub fn with_batch_size<T>(mut self, batch_size: T) -> Self
-    where
-        T: TryInto<NonZeroUsize>,
-        T::Error: Debug,
-    {
-        self.batch_size = batch_size.try_into().unwrap();
-        self
-    }
-
     //@todo: improve API by state pattern to always have those fields set
-    pub fn build(self) -> FreeIpFinder<Ip> {
-        FreeIpFinder {
-            strategy: self.strategy.unwrap(),
-            host_prober: self.host_prober.unwrap(),
-            batch_size: self.batch_size,
-        }
-    }
-}
-
-struct NetworkInterfaceConfigurator {
-    name: String,
-}
-
-impl NetworkInterfaceConfigurator {
-    pub fn new(name: &str) -> Self {
-        todo!()
-    }
-
-    pub fn assign_ip<I>(&mut self, ip_addr: I)
-    where
-        I: Into<IpAddr>,
-    {
-        todo!()
+    pub fn build(self) -> FreeIpFinder<'a, Ip> {
+        FreeIpFinder::new(self.ip_chunks.unwrap(), self.host_prober.unwrap())
     }
 }
 
