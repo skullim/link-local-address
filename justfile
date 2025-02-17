@@ -7,7 +7,7 @@ init-network:
 assign-capabilities script:
     #!/usr/bin/env sh
     for file in $( .{{ script }}); do
-    ./scripts/setup_net_raw.sh "$file"
+    ./scripts/setup_net_cap.sh "$file"
     done
 
 build-tests:

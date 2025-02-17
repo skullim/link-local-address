@@ -14,11 +14,11 @@ use pnet::util::MacAddr;
 async fn main() {
     let arp_client = ArpClient::new(
         ArpClientConfigBuilder::new("wlp4s0")
-            .with_response_timeout(Duration::from_millis(500))
+            .with_response_timeout(Duration::from_millis(100))
             .build(),
     )
     .unwrap();
-    let spinner = ArpClientSpinner::new(arp_client).with_retries(5);
+    let spinner = ArpClientSpinner::new(arp_client).with_retries(1);
     let ipv4_prober = Ipv4HostProber::new(spinner, MacAddr::zero()).unwrap();
     let selector = SequentialIpSelector::new(LocalLinkNetProvider::provide_ipv4());
     let ip_batcher = IpBatcher::new(NonZero::new(16).unwrap(), selector);
@@ -30,10 +30,6 @@ async fn main() {
 
     if let Some(next_free) = finder.find_next().await {
         println!("{:?}", next_free);
-    }
-
-    if let Some(next_free) = finder.find_next().await {
-        println!("{:?}", next_free);
 
         let configurator = LinkLocalInterfaceConfigurator::new("dummy2").unwrap();
         let ip = next_free.first().unwrap();
@@ -41,4 +37,9 @@ async fn main() {
         configurator.configure((*ip).into()).unwrap();
         println!("After: {:?}", configurator.addresses().unwrap());
     }
+
+    // if let Some(next_free) = finder.find_next().await {
+    //     println!("{:?}", next_free);
+
+    // }
 }
