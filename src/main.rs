@@ -5,8 +5,8 @@ use async_arp::{
     ClientSpinner as ArpClientSpinner,
 };
 use link_local_address::{
-    net_config::LinkLocalInterfaceConfigurator, probe::Ipv4HostProber, ChunksHandler, FreeIpFinder,
-    LocalLinkNetProvider, SequentialChunkSelector,
+    net_config::LinkLocalInterfaceConfigurator, probe::Ipv4HostProber, FreeIpFinder, IpBatcher,
+    LocalLinkNetProvider, SequentialIpSelector,
 };
 use pnet::util::MacAddr;
 
@@ -20,11 +20,11 @@ async fn main() {
     .unwrap();
     let spinner = ArpClientSpinner::new(arp_client).with_retries(5);
     let ipv4_prober = Ipv4HostProber::new(spinner, MacAddr::zero()).unwrap();
-    let chunks_selector = SequentialChunkSelector::new(LocalLinkNetProvider::provide_ipv4());
-    let mut handler = ChunksHandler::new(Box::new(chunks_selector), NonZero::new(16).unwrap());
+    let selector = SequentialIpSelector::new(LocalLinkNetProvider::provide_ipv4());
+    let ip_batcher = IpBatcher::new(NonZero::new(16).unwrap(), selector);
 
     let mut finder = FreeIpFinder::builder()
-        .with_ip_chunks(handler.chunks().unwrap())
+        .with_ip_batcher(ip_batcher)
         .with_host_prober(ipv4_prober)
         .build();
 
@@ -32,9 +32,10 @@ async fn main() {
         println!("{:?}", next_free);
     }
 
-    let configurator = LinkLocalInterfaceConfigurator::new("dummy2").unwrap();
     if let Some(next_free) = finder.find_next().await {
         println!("{:?}", next_free);
+
+        let configurator = LinkLocalInterfaceConfigurator::new("dummy2").unwrap();
         let ip = next_free.first().unwrap();
         println!("Before: {:?}", configurator.addresses().unwrap());
         configurator.configure((*ip).into()).unwrap();
