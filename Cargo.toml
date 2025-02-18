@@ -4,3 +4,5 @@ resolver = "2"
 members = [
     "link-local-address", "link-local-address-cli"
 ]
+
+exclude = [".circleci/"]
