@@ -2,14 +2,14 @@ use std::num::NonZeroUsize;
 
 use crate::selector::SelectIp;
 
-pub struct IpBatcher<Ip, S> {
+pub(super) struct IpBatcher<Ip, S> {
     batch: Vec<Ip>,
     size: usize,
     selector: S,
 }
 
 impl<Ip: Clone, S: SelectIp<Ip>> IpBatcher<Ip, S> {
-    pub fn new(size: NonZeroUsize, selector: S) -> Self {
+    pub(super) fn new(size: NonZeroUsize, selector: S) -> Self {
         let batch = Vec::with_capacity(size.into());
         Self {
             batch,
@@ -18,7 +18,7 @@ impl<Ip: Clone, S: SelectIp<Ip>> IpBatcher<Ip, S> {
         }
     }
 
-    pub(crate) fn next_batch(&mut self) -> Option<&[Ip]> {
+    pub(super) fn next_batch(&mut self) -> Option<&[Ip]> {
         self.batch.clear();
 
         for _ in 0..self.size {

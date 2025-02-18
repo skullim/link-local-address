@@ -4,30 +4,36 @@ use std::net::IpAddr;
 use ipnet::IpNet;
 use netconfig::Interface;
 
-pub struct LinkLocalConfig {
+pub struct NetConfigurator {
     interface: Interface,
 }
 
-impl LinkLocalConfig {
+impl NetConfigurator {
     pub fn new(name: &str) -> Result<Self> {
         Ok(Self {
-            interface: Interface::try_from_name(name).map_err(|err| err.to_string())?,
+            interface: Interface::try_from_name(name).map_err(|err| {
+                format!("failed to instantiate net configurator, reason: {}", err)
+            })?,
         })
     }
 
-    pub fn configure(&self, host_ip: IpAddr) -> Result<()> {
+    pub fn add(&self, host_ip: IpAddr) -> Result<()> {
         let prefix_len = match host_ip {
             IpAddr::V4(_) => 16,
             IpAddr::V6(_) => 10,
         };
+        let net = IpNet::new_assert(host_ip, prefix_len);
         Ok(self
             .interface
-            .add_address(IpNet::new_assert(host_ip, prefix_len))
-            .map_err(|err| err.to_string())?)
+            .add_address(net)
+            .map_err(|err| format!("failed to add {} network, reason: {}", net, err))?)
     }
 
     pub fn addresses(&self) -> Result<Vec<IpNet>> {
-        Ok(self.interface.addresses().map_err(|err| err.to_string())?)
+        Ok(self
+            .interface
+            .addresses()
+            .map_err(|err| format!("failed to obtain interface address, reason: {}", err))?)
     }
 }
 
@@ -35,16 +41,16 @@ impl LinkLocalConfig {
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-    use crate::link_local_config::LinkLocalConfig;
+    use crate::net_configurator::NetConfigurator;
 
     static INTERFACE_NAME: &str = "dummy0";
 
     #[test]
     fn test_configure_ipv4() {
-        let configurator = LinkLocalConfig::new(INTERFACE_NAME).unwrap();
+        let configurator = NetConfigurator::new(INTERFACE_NAME).unwrap();
         let ip = IpAddr::V4(Ipv4Addr::new(169, 254, 149, 255));
 
-        let result = configurator.configure(ip);
+        let result = configurator.add(ip);
         assert!(result.is_ok(), "Failed to configure IPv4 address");
         let addresses = configurator.addresses().unwrap();
 
@@ -59,10 +65,10 @@ mod tests {
 
     #[test]
     fn test_configure_ipv6() {
-        let configurator = LinkLocalConfig::new(INTERFACE_NAME).unwrap();
+        let configurator = NetConfigurator::new(INTERFACE_NAME).unwrap();
         let ip = IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 1, 1, 1, 1));
 
-        let result = configurator.configure(ip);
+        let result = configurator.add(ip);
         assert!(result.is_ok(), "Failed to configure IPv6 address");
         let addresses = configurator.addresses().unwrap();
 
