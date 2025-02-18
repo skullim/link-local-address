@@ -8,16 +8,27 @@ use pnet::util::MacAddr;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
+    /// The network interface to operate on (e.g., `eth0`, `wlan0`).
     #[arg(short, long)]
     interface: String,
+
+    /// The MAC address of the device used for ARP-based conflict prevention.
     #[arg(short, long, value_parser=parse_mac_addr)]
     mac_addr: MacAddr,
+
+    /// The number of retry attempts for ARP scanning.
     #[arg(short, long, default_value_t = 5)]
     retries: usize,
+
+    /// Timeout for receiving ARP responses in milliseconds.
     #[arg(short='t', long, value_parser=parse_duration_ms, default_value ="500")]
     response_timeout: Duration,
+
+    /// Timeout for caching ARP responses in seconds.
     #[arg(short, long, value_parser=parse_duration_s, default_value ="60")]
     cache_timeout: Duration,
+
+    /// The number of IP addresses to process in each batch.
     #[arg(short, long, default_value_t = NonZeroUsize::new(32).unwrap())]
     batch_size: NonZeroUsize,
 }
