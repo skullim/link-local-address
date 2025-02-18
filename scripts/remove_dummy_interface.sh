@@ -1,1 +1,0 @@
-sudo ip link delete dummy0 

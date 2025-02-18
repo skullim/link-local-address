@@ -2,6 +2,7 @@ pub trait SelectIp<Ip> {
     fn select(&mut self) -> Option<&Ip>;
 }
 
+#[derive(Debug, Clone)]
 pub struct SequentialIpSelector<Ip> {
     ip_range: Vec<Ip>,
     index: usize,

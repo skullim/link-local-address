@@ -4,6 +4,7 @@ use std::net::IpAddr;
 use ipnet::IpNet;
 use netconfig::Interface;
 
+#[derive(Debug)]
 pub struct NetConfigurator {
     interface: Interface,
 }

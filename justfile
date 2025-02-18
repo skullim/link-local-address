@@ -1,13 +1,13 @@
 default:
     just --list
 
-create-dummy-interface:
-    ./scripts/create_dummy_interface.sh
+setup-interface interface_name:
+    ./scripts/setup_interface.sh  {{ interface_name }}
 
-remove-dummy-interface:
-    ./scripts/remove_dummy_interface.sh
+remove-interface interface_name:
+    ./scripts/remove_interface.sh {{ interface_name }}
 
-assign-capabilities script:
+_assign-capabilities script:
     #!/usr/bin/env sh
     for file in $( .{{ script }}); do
     ./scripts/setup_net_cap.sh "$file"
@@ -15,18 +15,15 @@ assign-capabilities script:
 
 test:
     cargo test --no-run
-    just assign-capabilities /scripts/find_test_files.sh
-
-    just create-dummy-interface
+    just _assign-capabilities /scripts/find_test_files.sh
+    just setup-interface dummy0
     cargo test
-    just remove-dummy-interface
+    just remove-interface dummy0
 
-run:
+run-cli interface mac_addr:
     cargo build
-    just assign-capabilities /scripts/find_binary.sh
-    just create-dummy-interface
-    cargo run
-    just remove-dummy-interface
+    just _assign-capabilities /scripts/find_binary.sh
+    cargo run --bin link-local-address-cli -- -i {{ interface }} -m {{ mac_addr }}
 
 publish:
     cargo build --all-targets

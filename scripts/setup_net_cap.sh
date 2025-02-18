@@ -7,7 +7,7 @@ fi
 
 FILE_NAME="$1"
 
-sudo setcap  cap_net_admin,cap_net_raw=eip "$FILE_NAME"
+sudo setcap cap_net_admin,cap_net_raw=eip "$FILE_NAME"
 EXIT_CODE=$?  
 
 if [ $EXIT_CODE -eq 0 ]; then

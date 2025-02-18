@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 
 use crate::selector::SelectIp;
 
+#[derive(Debug, Clone)]
 pub(super) struct IpBatcher<Ip, S> {
     batch: Vec<Ip>,
     size: usize,

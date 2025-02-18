@@ -32,10 +32,10 @@ impl From<ArpProbeOutcome> for Outcome<Ipv4Addr> {
 
 #[async_trait]
 pub(super) trait ProbeHost<Ip> {
-    async fn probe(&self, ip_slice: &[Ip]) -> Vec<Result<Outcome<Ip>>>;
+    async fn probe(&self, ip_slice: &[Ip]) -> Result<Vec<Outcome<Ip>>>;
 }
-pub(super) type HostProber<Ip> = Box<dyn ProbeHost<Ip>>;
 
+#[derive(Debug)]
 pub(super) struct Ipv4HostProber {
     spinner: ArpClientSpinner,
     mac_addr: MacAddr,
@@ -49,7 +49,7 @@ impl Ipv4HostProber {
 
 #[async_trait]
 impl ProbeHost<Ipv4Addr> for Ipv4HostProber {
-    async fn probe(&self, ip_slice: &[Ipv4Addr]) -> Vec<Result<Outcome<Ipv4Addr>>> {
+    async fn probe(&self, ip_slice: &[Ipv4Addr]) -> Result<Vec<Outcome<Ipv4Addr>>> {
         let inputs: Vec<_> = ip_slice
             .iter()
             .map(|ip| ProbeInput {
@@ -58,13 +58,12 @@ impl ProbeHost<Ipv4Addr> for Ipv4HostProber {
             })
             .collect();
 
-        self.spinner
+        Ok(self
+            .spinner
             .probe_batch(&inputs)
-            .await
+            .await?
             .into_iter()
-            .filter_map(|outcome| outcome.ok())
             .map(Into::<Outcome<Ipv4Addr>>::into)
-            .map(Ok)
-            .collect()
+            .collect())
     }
 }

@@ -12,7 +12,7 @@ use crate::{
     selector::SequentialIpSelector,
 };
 
-#[derive(TypedBuilder, Debug)]
+#[derive(TypedBuilder, Debug, Clone, Copy)]
 pub struct Ipv4ScanConfig {
     #[builder(default = 5)]
     n_retries: usize,
@@ -28,7 +28,7 @@ impl Default for Ipv4ScanConfig {
     }
 }
 
-#[derive(TypedBuilder, Debug)]
+#[derive(TypedBuilder, Debug, Clone, Copy)]
 pub struct Ipv4HandlerConfig {
     #[builder(default)]
     scan: Ipv4ScanConfig,
@@ -38,8 +38,9 @@ pub struct Ipv4HandlerConfig {
     mac_addr: MacAddr,
 }
 
+#[derive(Debug)]
 pub struct Ipv4Handler {
-    finder: FreeIpFinder<Ipv4Addr, SequentialIpSelector<Ipv4Addr>>,
+    finder: FreeIpFinder<Ipv4Addr, SequentialIpSelector<Ipv4Addr>, Ipv4HostProber>,
 }
 
 impl Ipv4Handler {
@@ -56,17 +57,17 @@ impl Ipv4Handler {
 
         let selector = SequentialIpSelector::new(Net::ipv4());
         let ip_batcher = IpBatcher::new(config.batch_size, selector);
-        let finder = FreeIpFinder::new(ip_batcher, Box::new(prober));
+        let finder = FreeIpFinder::new(ip_batcher, prober);
 
         Ok(Self { finder })
     }
 
-    pub async fn next_free_ip_batch(&mut self) -> Option<Vec<Ipv4Addr>> {
-        while let Some(v) = self.finder.find_next().await {
+    pub async fn next_free_ip_batch(&mut self) -> Result<Option<Vec<Ipv4Addr>>> {
+        while let Some(v) = self.finder.find_next().await? {
             if !v.is_empty() {
-                return Some(v);
+                return Ok(Some(v));
             }
         }
-        None
+        Ok(None)
     }
 }

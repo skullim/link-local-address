@@ -1,0 +1,14 @@
+[package]
+name = "link-local-address"
+version = "0.1.0"
+license = "MIT"
+edition = "2021"
+
+[dependencies]
+async-arp = "0.4.0"
+async-trait = "0.1.86"
+futures = "0.3.31"
+ipnet = "2.11.0"
+netconfig = "0.4.0"
+pnet = "0.35.0"
+typed-builder = "0.20.0"
