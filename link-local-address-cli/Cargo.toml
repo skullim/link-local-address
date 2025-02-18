@@ -6,7 +6,7 @@ edition = "2021"
 authors =["Adrian Skulimowski"]
 description = "A CLI tool that automates link-local IP assignment by scanning network interfaces and selecting a free address."
 license = "MIT/Apache-2.0"
-keywords = ["network", "configuration", "cli", "utility", "async", "link-local", "ip"]
+keywords = ["network", "cli", "async", "link-local", "ip"]
 categories = ["network-programming", "command-line-utilities", "config"]
 repository = "https://github.com/skullim/link-local-address"
 
