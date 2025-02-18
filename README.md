@@ -19,6 +19,17 @@
 - Assigning IPs without relying on DHCP
 - Avoiding IP conflicts in local networking environments
 
+## CLI
+
+This project includes a basic command-line interface that leverages the `link-local-address` library to scan for and assign link-local IPv4 addresses. The CLI allows users to dynamically assign addresses, perform network scans, and manage local network configurations without relying on DHCP.
+
+### Features
+- **Scan for free addresses**: The CLI tool scans the network to find available link-local IPv4 addresses.
+- **Assign addresses**: Assigns link-local IPv4 addresses to interfaces without DHCP.
+- **Configurable parameters**: Customize retries, timeouts, and batch sizes via command-line arguments.
+
+The source code for the CLI tool can be found in the following [file](<https://github.com/skullim/link-local-address/blob/main/link-local-address-cli/src/main.rs>).
+
 ## License
 
 Licensed under either of
