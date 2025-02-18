@@ -7,7 +7,7 @@ authors =["Adrian Skulimowski"]
 description = "A library for discovering and configuring link-local addresses with automatic IP conflict detection."
 license = "MIT/Apache-2.0"
 keywords = ["link-local", "network", "async", "ip", "configuration"]
-categories = ["network-programming", "configuration"]
+categories = ["network-programming", "config"]
 repository = "https://github.com/skullim/link-local-address"
 
 [dependencies]

@@ -28,4 +28,5 @@ run-cli interface mac_addr:
 publish:
     cargo build --all-targets
     just test
-    cargo publish
+    cargo publish -p link-local-address
+    cargo publish -p link-local-address-cli
