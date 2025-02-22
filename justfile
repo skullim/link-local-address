@@ -16,9 +16,13 @@ _assign-capabilities script:
 test:
     cargo test --no-run
     just _assign-capabilities /scripts/find_test_files.sh
-    just setup-interface dummy0
-    cargo test
-    just remove-interface dummy0
+
+    #!/usr/bin/env sh
+    for test_name in $(./scripts/list_tests.sh); do \
+        just setup-interface dummy0; \
+        cargo test "$test_name"; \
+        just remove-interface dummy0; \
+    done
 
 run-cli interface mac_addr:
     cargo build
