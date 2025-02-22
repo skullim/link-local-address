@@ -2,6 +2,7 @@ use async_arp::{
     Client as ArpClient, ClientConfigBuilder as ArpClientConfigBuilder,
     ClientSpinner as ArpClientSpinner,
 };
+use mac_address::mac_address_by_name;
 use std::{net::Ipv4Addr, num::NonZeroUsize, time::Duration};
 
 use pnet::util::MacAddr;
@@ -35,7 +36,6 @@ pub struct Ipv4HandlerConfig {
     #[builder(default = NonZeroUsize::new(32).unwrap())]
     batch_size: NonZeroUsize,
     interface: &'static str,
-    mac_addr: MacAddr,
 }
 
 #[derive(Debug)]
@@ -53,8 +53,26 @@ impl Ipv4Handler {
         )
         .map_err(|err| format!("failed to instantiate scanner, reason: {}", err))?;
         let spinner = ArpClientSpinner::new(arp_client).with_retries(config.scan.n_retries);
-        let prober = Ipv4HostProber::new(spinner, config.mac_addr);
-
+        let mac_addr_bytes = mac_address_by_name(config.interface)
+            .map_err(|err| {
+                format!(
+                    "failed to obtain mac address from interface name, reason: {}",
+                    err
+                )
+            })?
+            .ok_or("network interface does not have assigned mac address")?
+            .bytes();
+        let prober = Ipv4HostProber::new(
+            spinner,
+            MacAddr::new(
+                mac_addr_bytes[0],
+                mac_addr_bytes[1],
+                mac_addr_bytes[2],
+                mac_addr_bytes[3],
+                mac_addr_bytes[4],
+                mac_addr_bytes[5],
+            ),
+        );
         let selector = SequentialIpSelector::new(Net::ipv4());
         let ip_batcher = IpBatcher::new(config.batch_size, selector);
         let finder = FreeIpFinder::new(ip_batcher, prober);

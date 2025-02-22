@@ -16,12 +16,11 @@ impl Net {
                 let octets = ip.octets();
                 !(octets[2] == 0 || octets[2] == 255)
             })
-            .map(Into::into)
             .collect()
     }
 
     #[allow(dead_code)]
     pub(super) fn ipv6() -> Vec<Ipv6Addr> {
-        Self::IPV6_NET.hosts().map(Into::into).collect()
+        Self::IPV6_NET.hosts().collect()
     }
 }

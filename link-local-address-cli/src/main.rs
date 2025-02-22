@@ -1,9 +1,8 @@
-use std::{num::NonZeroUsize, str::FromStr, time::Duration};
+use std::{num::NonZeroUsize, time::Duration};
 
 use clap::Parser;
 use link_local_address::{Ipv4Handler, Ipv4HandlerConfig, Ipv4ScanConfig, NetConfigurator, Result};
 use log::{info, warn};
-use pnet::util::MacAddr;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -11,10 +10,6 @@ struct Args {
     /// The network interface to operate on (e.g., `eth0`, `wlan0`).
     #[arg(short, long)]
     interface: String,
-
-    /// The MAC address of the device used for ARP-based conflict prevention.
-    #[arg(short, long, value_parser=parse_mac_addr)]
-    mac_addr: MacAddr,
 
     /// The number of retry attempts for ARP scanning.
     #[arg(short, long, default_value_t = 5)]
@@ -31,10 +26,6 @@ struct Args {
     /// The number of IP addresses to process in each batch.
     #[arg(short, long, default_value_t = NonZeroUsize::new(32).unwrap())]
     batch_size: NonZeroUsize,
-}
-
-fn parse_mac_addr(arg: &str) -> Result<MacAddr> {
-    Ok(MacAddr::from_str(arg)?)
 }
 
 fn parse_duration_ms(arg: &str) -> Result<Duration> {
@@ -63,7 +54,6 @@ async fn main() -> Result<()> {
                         .build(),
                 )
                 .interface(interface)
-                .mac_addr(args.mac_addr)
                 .batch_size(args.batch_size)
                 .build(),
         )?
