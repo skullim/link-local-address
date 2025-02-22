@@ -1,6 +1,6 @@
 [package]
 name = "link-local-address-cli"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 
 authors =["Adrian Skulimowski"]
@@ -11,7 +11,7 @@ categories = ["network-programming", "command-line-utilities", "config"]
 repository = "https://github.com/skullim/link-local-address"
 
 [dependencies]
-link-local-address = {version = "0.1.0", path = "../link-local-address"}
+link-local-address = {version = "0.2.0", path = "../link-local-address"}
 tokio = {version = "1.43.0", features = ["rt", "macros"]}
 log = "0.4.25"
 simple_logger = "5.0.0"
